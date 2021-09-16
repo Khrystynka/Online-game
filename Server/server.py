@@ -1,6 +1,8 @@
 import socket
 from _thread import *
-import sys
+from game import Game
+import pickle
+from Client.player import *
 
 server = "192.168.0.106"
 port = 5555
@@ -13,50 +15,110 @@ except socket.error as e:
     print('Not binded correctly',e)
 
 s.listen(2)
-print("Waiting for connection.Server started")
+print("Waiting for connection. Server started")
 
-def read_pos(str):
-    str = str.split(",")
-    return (int(str[0]), int(str[1]))
+connected = set()
+games = {}
+id_count = 0
 
-def make_pos(tup):
-    return str(tup[0])+','+str(tup[1])
-
-pos = [(0,0), (100,100)]
-def threaded_client(conn, player):
-    #  when the connection is estavblished for the first time - server sends initial position of the player
-    conn.send(str.encode(make_pos(pos[player])))
+def threaded_client(conn, p, game_id):
+    global id_count
+    conn.send(str.encode(str(p)))
+    reply = ""
     while True:
         try:
-            # from client the server receives its position, for ex. player1 sends its position 
-            # server uses this information to update pos 
-            # and sends the position of other player (player0 ) to player1
-            data = read_pos(conn.recv(2048).decode())
-            pos[player] = data
-            # reply = data.decode('utf-8')
-            if not data:
-                print('Disconnected')
-                break
-            else:
-                # after the initialconnection the server always send the 
-                # position of player1 to player 0 and visa versa
-                
-                if player == 1:
-                    reply = pos[0]
+            data = conn.recv(4096).decode()
+            if game_id in games:
+                game = games[game_id]
+                if not data:
+                    break
                 else:
-                    reply = pos[1]
-                # print('Received from player ', player, data)
-                # print('Sending to player:',player, reply)
-            conn.sendall(str.encode(make_pos(reply)))
+                    if data == 'reset':
+                        game.reset_moves()
+                    elif data != 'get':
+                        game.play(p,data)
+                    reply = game
+                    conn.sendall(pickle.dumps(reply))
+            else:
+                break
         except:
             break
-    print('Lost connection')
-    conn.close()
-            
+    print("Lost connection")
+    try:
+        del games[game_id]
+        print("Closing the game", game_id)
 
-current_player = 0
+    except:
+        pass
+    id_count -= 1
+    conn.close()
+
+
 while True:
     conn, addr = s.accept()
-    print(f"connected to {addr} with conn {conn}, You are player {current_player}")
-    start_new_thread(threaded_client, (conn, current_player))
-    current_player += 1
+    print("Connected to:", addr)
+    # new person joined the game
+    id_count += 1
+    p = 0
+    game_id = (id_count - 1) // 2
+    if id_count % 2 ==1:
+        games[game_id] = Game(game_id)
+        print ("Creating new game...")
+    else:
+        games[game_id].ready = True
+        p = 1
+    start_new_thread(threaded_client, (conn,p,game_id))
+
+
+
+
+
+
+
+
+
+
+
+
+# print("Waiting for connection.Server started")
+# players = [Player(0, 0, 50,50,(255,0,0)), Player(100, 100, 50,50,(0,255,0))]
+# print(players)
+# def threaded_client(conn, player):
+#     #  when the connection is estavblished for the first time - server sends initial position of the player
+#     data_curr_player = pickle.dumps(players[player])
+#     print(pickle.loads(data_curr_player))
+#     conn.send(data_curr_player)
+#     while True:
+#         try:
+#             # from client the server receives its position, for ex. player1 sends its position
+#             # server uses this information to update pos
+#             # and sends the position of other player (player0 ) to player1
+#             data = pickle.loads(conn.recv(2048))
+#             players[player] = data
+#             # reply = data.decode('utf-8')
+#             if not data:
+#                 print('Disconnected')
+#                 break
+#             else:
+#                 # after the initialconnection the server always send the
+#                 # position of player1 to player 0 and visa versa
+#
+#                 if player == 1:
+#                     reply = players[0]
+#                 else:
+#                     reply = players[1]
+#                 # print('Received from player ', player, data)
+#                 # print('Sending to player:',player, reply)
+#             conn.sendall(pickle.dumps(reply))
+#         except:
+#             break
+#     print('Lost connection')
+#     conn.close()
+#
+#
+# current_player = 0
+# while True:
+#     conn, addr = s.accept()
+#     print(f"connected to {addr} with conn {conn}, You are player {current_player}")
+#     start_new_thread(threaded_client, (conn, current_player))
+#     current_player += 1
